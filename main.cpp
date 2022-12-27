@@ -3,8 +3,9 @@
 #include <iostream>
 #include <deque>
 #include <string>
+#include <fstream>
 
-using std::cout, std::deque, std::to_string, std::string, std::stoi;
+using std::cout, std::deque, std::to_string, std::string, std::stoi, std::ofstream, std::ifstream, std::getline, std::ws, std::cin;
 
 /*
 * written by chapel1337
@@ -15,10 +16,14 @@ using std::cout, std::deque, std::to_string, std::string, std::stoi;
 * and, of course, due to the lack of high definition rendering it's inevitable that some moron will notice it and think this is garbage
 * i didn't work on this during the 23rd, as i was working on a seperate project
 * while working on this, i figured out how to make an effective button, so i will update the snow falling and finally add the snow pushing feature
+* release seems to be broken for some unknwon reason, so i'll be releasing this as debug
 * merry christmas
+* 
+* (12/26/2022 - 12/27/2022) - added front resizing threshold, decreased credits length, centered rectangle x and y, attempted to add save and load feature but failed, added background changing, added color picker, added window maximizing/minimizing, added window fullscreen
+* can't think of how to design buttons for background changer and color picker
 */
 
-SDL_Window* window{ SDL_CreateWindow("paint", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1000, 750, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE) };
+SDL_Window* window{ SDL_CreateWindow("paint", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1050, 750, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE) };
 SDL_Renderer* renderer{ SDL_CreateRenderer(window, -1, NULL) };
 
 SDL_Surface* windowIcon{ SDL_LoadBMP("paint_brush.bmp") };
@@ -34,17 +39,16 @@ SDL_Color currentColor{ 255, 0, 0, 255 };
 SDL_Color customColor{ 255, 255, 255, 255 };
 string customColorString{ "225, 255, 255" };
 
+SDL_Rect changeBackgroundRect{ 860, 10, 25, 25 };
+// SDL_Rect changeBackgroundInnerRect{ 0, 0, 0, 0 };
+SDL_Color backgroundColor{ 20, 20, 20, 255 };
+
+SDL_Rect colorPickerRect{ 910, 10, 25, 25 };
+
 SDL_Rect rgbRect{ 680, 10, 150, 25 };
-SDL_Rect increaseSizeRect{ 880, -2, 30, 50 };
-SDL_Rect decreaseSizeRect{ 920, -6, 25, 50 };
+SDL_Rect increaseSizeRect{ 965, -2, 30, 50 };
+SDL_Rect decreaseSizeRect{ 1005, -6, 25, 50 };
 SDL_Rect underlineRect{ 682, 35, 10, 2 };
-
-/*
-SDL_Rect sliderRect{ 850, 21, 100, 6 };
-SDL_Rect sliderHandleRect{ 875, 15, 6, 18 };
-
-int sliderSize{};
-*/
 
 SDL_Surface* rgbSurface{};
 SDL_Texture* rgbTexture{};
@@ -65,7 +69,12 @@ int currentPaintPlaced{};
 
 bool mouse1Down{};
 bool mouse1Up{};
-bool mouse1Slider{};
+
+bool fullscreen{};
+bool maximized{};
+
+bool backgroundChanged{};
+bool pickingColor{};
 
 bool settingCustom{};
 int customPosition{};
@@ -78,7 +87,7 @@ int paintSizeChanged{};
 int paintSize{ 15 };
 
 void loop();
-void setup();
+void refresh();
 void credits();
 
 int main()
@@ -86,13 +95,15 @@ int main()
 	// i wish this was toggleable
 	TTF_Init();
 
+	SDL_SetWindowIcon(window, windowIcon);
+
 	arialFont = TTF_OpenFont("arial.ttf", 15);
 
 	rgbSurface = TTF_RenderText_Solid(arialFont, customColorString.c_str(), SDL_Color(75, 75, 75, 255));
 	rgbTexture = SDL_CreateTextureFromSurface(renderer, rgbSurface);
 
 	credits();
-	setup();
+	refresh();
 
 	return 0;
 }
@@ -101,7 +112,7 @@ void credits()
 {
 	SDL_Surface* creditsSurface{};
 	SDL_Texture* creditsTexture{};
-	SDL_Rect creditsRect{ 300, 250, 400, 250 };
+	SDL_Rect creditsRect{ 325, 250, 400, 250 };
 
 	for (int i{ 1 }; i <= 254; ++i)
 	{
@@ -175,10 +186,12 @@ void credits()
 	SDL_FreeSurface(creditsSurface);
 }
 
-void setup()
+void refresh()
 {
-	SDL_SetWindowIcon(window, windowIcon);
 	SDL_GetWindowSize(window, &toolbarBackground.w, NULL);
+
+	SDL_SetRenderDrawColor(renderer, backgroundColor.r, backgroundColor.g, backgroundColor.b, backgroundColor.a);
+	SDL_RenderClear(renderer);
 
 	SDL_SetRenderDrawColor(renderer, 105, 105, 105, 255);
 	SDL_RenderFillRect(renderer, &toolbarBackground);
@@ -300,44 +313,49 @@ void setup()
 	}
 
 	SDL_RenderCopy(renderer, rgbTexture, NULL, &rgbRect);
+	
+	SDL_SetRenderDrawColor(renderer, 75, 75, 75, 255);
+	SDL_RenderFillRect(renderer, &changeBackgroundRect);
+
+	if (backgroundChanged)
+	{
+		SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+		SDL_RenderDrawRect(renderer, &changeBackgroundRect);
+	}
+
+	/*
+	SDL_SetRenderDrawColor(renderer, currentColor.r, currentColor.g, currentColor.b, currentColor.a);
+	SDL_RenderFillRect(renderer, &changeBackgroundInnerRect);
+	*/
+
+	SDL_SetRenderDrawColor(renderer, 75, 75, 75, 255);
+	SDL_RenderFillRect(renderer, &colorPickerRect);
+
+	if (pickingColor)
+	{
+		SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+		SDL_RenderDrawRect(renderer, &colorPickerRect);
+	}
+
+	increaseSizeSurface = TTF_RenderText_Solid(arialFont, "+", SDL_Color(75, 75, 75, 255));
+	increaseSizeTexture = SDL_CreateTextureFromSurface(renderer, increaseSizeSurface);
+
+	decreaseSizeSurface = TTF_RenderText_Solid(arialFont, "-", SDL_Color(75, 75, 75, 255));
+	decreaseSizeTexture = SDL_CreateTextureFromSurface(renderer, decreaseSizeSurface);
 
 	if (paintSizeChanged == 1)
 	{
-		decreaseSizeSurface = TTF_RenderText_Solid(arialFont, "-", SDL_Color(75, 75, 75, 255));
-		decreaseSizeTexture = SDL_CreateTextureFromSurface(renderer, decreaseSizeSurface);
-
 		increaseSizeSurface = TTF_RenderText_Solid(arialFont, "+", SDL_Color(45, 45, 45, 255));
 		increaseSizeTexture = SDL_CreateTextureFromSurface(renderer, increaseSizeSurface);
 	}
 	else if (paintSizeChanged == 2)
 	{
-		increaseSizeSurface = TTF_RenderText_Solid(arialFont, "+", SDL_Color(75, 75, 75, 255));
-		increaseSizeTexture = SDL_CreateTextureFromSurface(renderer, increaseSizeSurface);
-
 		decreaseSizeSurface = TTF_RenderText_Solid(arialFont, "-", SDL_Color(45, 45, 45, 255));
-		decreaseSizeTexture = SDL_CreateTextureFromSurface(renderer, decreaseSizeSurface);
-	}
-	else
-	{
-		increaseSizeSurface = TTF_RenderText_Solid(arialFont, "+", SDL_Color(75, 75, 75, 255));
-		increaseSizeTexture = SDL_CreateTextureFromSurface(renderer, increaseSizeSurface);
-
-		decreaseSizeSurface = TTF_RenderText_Solid(arialFont, "-", SDL_Color(75, 75, 75, 255));
 		decreaseSizeTexture = SDL_CreateTextureFromSurface(renderer, decreaseSizeSurface);
 	}
 
 	SDL_RenderCopy(renderer, increaseSizeTexture, NULL, &increaseSizeRect);
 	SDL_RenderCopy(renderer, decreaseSizeTexture, NULL, &decreaseSizeRect);
-
-	SDL_RenderPresent(renderer);
-
-	loop();
-}
-
-void refresh()
-{
-	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
-	SDL_RenderClear(renderer);
 
 	for (int i{}; i < paint.size(); ++i)
 	{
@@ -345,7 +363,9 @@ void refresh()
 		SDL_RenderFillRect(renderer, &paint[i]);
 	}
 
-	setup();
+	SDL_RenderPresent(renderer);
+
+	loop();
 }
 
 void loop()
@@ -354,9 +374,6 @@ void loop()
 	{
 		SDL_PollEvent(&event);
 		SDL_GetMouseState(&mouseX, &mouseY);
-
-		// cout << static_cast<int>(customColor.r) << ", " << static_cast<int>(customColor.g) << ", " << static_cast<int>(customColor.b) << '\n';
-		// cout << "custom position: " << customPosition << '\n';
 
 		if (event.type == SDL_QUIT)
 		{
@@ -382,11 +399,143 @@ void loop()
 
 			refresh();
 		}
+		else if (event.type == SDL_KEYDOWN && (event.key.keysym.sym == SDLK_f || event.key.keysym.sym == SDLK_F11))
+		{
+			if (fullscreen)
+			{
+				SDL_SetWindowFullscreen(window, 0);
+				SDL_RestoreWindow(window);
+
+				fullscreen = false;
+			}
+			else
+			{
+				SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+				SDL_MaximizeWindow(window);
+
+				fullscreen = true;
+			}
+
+			refresh();
+		}
+		else if (!fullscreen && event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_m)
+		{
+			if (maximized)
+			{
+				SDL_RestoreWindow(window);
+
+				maximized = false;
+			}
+			else
+			{
+				SDL_MaximizeWindow(window);
+
+				maximized = true;
+			}
+
+			refresh();
+		}
+		/*
+		else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_s && !paint.empty())
+		{
+			ofstream save{ "save.ps" };
+
+			// idenfitier
+			save << "%TYHUJI(*&YUJKMNBGFR%T^YUJ\n";
+
+			for (int i{}; i < paint.size(); ++i)
+			{
+				save << paint[i].x << ' ' << paint[i].y << ' ' << paint[i].w << ' ' << paint[i].h << '\n';
+
+				if (paintColors[i].r >= 100)
+				{
+					save << (int) paintColors[i].r << ' ';
+				}
+				else if (paintColors[i].r >= 10)
+				{
+					save << (int) paintColors[i].r << "0 ";
+				}
+				else if (paintColors[i].r >= 0)
+				{
+					save << (int)paintColors[i].r << "00 ";
+				}
+
+				if (paintColors[i].g >= 100)
+				{
+					save << (int) paintColors[i].g << ' ';
+				}
+				else if (paintColors[i].g >= 10)
+				{
+					save << (int) paintColors[i].g << "0 ";
+				}
+				else if (paintColors[i].g >= 0)
+				{
+					save << (int) paintColors[i].g << "00 ";
+				}
+
+				if (paintColors[i].b >= 100)
+				{
+					save << (int)paintColors[i].b << '\n';
+				}
+				else if (paintColors[i].b >= 10)
+				{
+					save << (int)paintColors[i].b << "0\n";
+				}
+				else if (paintColors[i].b >= 0)
+				{
+					save << (int)paintColors[i].b << "00\n";
+				}
+			}
+
+			save.close();
+		}
+		else if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_l)
+		{
+			paint.clear();
+			paintColors.clear();
+			paintPlaced.clear();
+
+			ifstream save{ "save.ps" };
+
+			int lineCount{};
+			string line{};
+
+			while (getline(cin >> ws, line))
+			{
+				++lineCount;
+
+				cout << lineCount << '\n';
+
+				if (lineCount == 1 && line != "%TYHUJI(*&YUJKMNBGFR%T^YUJ")
+				{
+					break;
+				}
+
+				if (lineCount % 2 == 0)
+				{
+					SDL_Rect paintDot{ stoi(line.substr(0, 2)), stoi(line.substr(4, 6)), stoi(line.substr(8, 9)), stoi(line.substr(11, 12)) };
+
+					paint.push_back(paintDot);
+				}
+				else
+				{
+					SDL_Color paintColor{ stoi(line.substr(0, 2)), stoi(line.substr(4, 6)), stoi(line.substr(8, 10)) };
+
+					paintColors.push_back(paintColor);
+				}
+			}
+
+			paintSize = paint[paint.size() - 1].h;
+
+			refresh();
+		}
+		*/
 		else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT)
 		{
 			SDL_GetMouseState(&mouseX, &mouseY);
 
 			settingCustom = false;
+			backgroundChanged = false;
 			paintSizeChanged = 0;
 
 			// this took way too long to implement
@@ -568,17 +717,31 @@ void loop()
 					settingCustom = true;
 				}
 
-				else if (mouseX >= increaseSizeRect.x && mouseX <= increaseSizeRect.x + increaseSizeRect.w)
+				else if (mouseX >= increaseSizeRect.x && mouseX <= increaseSizeRect.x + increaseSizeRect.w && paintSize != 35)
 				{
 					++paintSize;
 
 					paintSizeChanged = 1;
 				}
-				else if (mouseX >= decreaseSizeRect.x && mouseX <= decreaseSizeRect.x + decreaseSizeRect.w)
+				else if (mouseX >= decreaseSizeRect.x && mouseX <= decreaseSizeRect.x + decreaseSizeRect.w && paintSize != 2)
 				{
 					--paintSize;
 
 					paintSizeChanged = 2;
+				}
+
+				else if (mouseX >= changeBackgroundRect.x && mouseX <= changeBackgroundRect.x + changeBackgroundRect.w)
+				{
+					backgroundChanged = true;
+
+					backgroundColor = currentColor;
+				}
+
+				else if (mouseX >= colorPickerRect.x && mouseX <= colorPickerRect.x + colorPickerRect.w)
+				{
+					cout << "a\n";
+
+					pickingColor = true;
 				}
 
 				refresh();
@@ -602,7 +765,7 @@ void loop()
 
 			if (windowW < 1000)
 			{
-				SDL_SetWindowSize(window, 1000, windowH);
+				SDL_SetWindowSize(window, 1075, windowH);
 			}
 			if (windowH < 750)
 			{
@@ -673,14 +836,30 @@ void loop()
 				currentColor = customColor;
 			}
 
-			setup();
+			refresh();
 		}
 
-		if (mouse1Down)
+		if (pickingColor && mouse1Down)
+		{
+			for (int i{}; i < paint.size(); ++i)
+			{
+				if (mouseX >= paint[i].x && mouseX <= paint[i].x + paint[i].w && mouseY >= paint[i].y && mouseY <= paint[i].y + paint[i].h)
+				{
+					currentColor = paintColors[i];
+					pickingColor = false;
+
+					refresh();
+				}
+			}
+		}
+		else if (mouse1Down)
 		{
 			SDL_Rect paintDot{ 0, 0, paintSize, paintSize };
 
 			SDL_GetMouseState(&paintDot.x, &paintDot.y);
+
+			paintDot.x -= paintSize / 2;
+			paintDot.y -= paintSize / 2;
 
 			if (paintDot.y >= 50)
 			{
@@ -700,25 +879,5 @@ void loop()
 			paintPlaced.push_back(currentPaintPlaced);
 			currentPaintPlaced = 0;
 		}
-		/*
-		else if (mouse1Slider)
-		{
-			int mouseX2{};
-			int mouseY2{};
-
-			SDL_GetMouseState(&mouseX2, &mouseY2);
-
-			cout << "silly\n";
-
-			if (mouseX2 > mouseX)
-			{
-				++sliderHandleRect.x;
-			}
-			else if (mouseX < mouseX2)
-			{
-				--sliderHandleRect.x;
-			}
-		}
-		*/
 	}
 }
